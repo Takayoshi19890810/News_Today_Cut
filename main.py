@@ -18,15 +18,12 @@ def extract_articles(gc):
     yesterday_15 = today_15 - timedelta(days=1)
 
     extracted = []
-    headers = []
-
     for sheet in SOURCE_SHEETS:
         try:
             ws = sh.worksheet(sheet)
             values = ws.get_all_values()
             if not values:
                 continue
-            headers = values[0]
             rows = values[1:]
 
             for row in rows:
@@ -48,8 +45,14 @@ def extract_articles(gc):
                     dt = datetime.strptime(date_str, "%Y/%m/%d %H:%M")
 
                     if yesterday_15 <= dt < today_15:
-                        extracted.append(row + [NEWS_SOURCES[sheet]])
-
+                        # A:ニュース元 / B:タイトル / C:URL / D:投稿日 / E:引用元
+                        extracted.append([
+                            NEWS_SOURCES[sheet],  # A列: ニュース元
+                            row[0],               # B列: タイトル
+                            row[1],               # C列: URL
+                            date_str,             # D列: 投稿日
+                            row[3] if len(row) > 3 else ""  # E列: 引用元
+                        ])
                 except Exception as e:
                     print(f"⚠️ {sheet} スキップ: {row[DATE_COLUMN_INDEX]} → {e}")
                     continue
@@ -57,7 +60,8 @@ def extract_articles(gc):
             print(f"❌ {sheet} 読み込みエラー: {e}")
             continue
 
-    return headers + ["ニュース元"], extracted
+    headers = ["ニュース元", "タイトル", "URL", "投稿日", "引用元"]
+    return headers, extracted
 
 def overwrite_sheet(gc, sheet_name, headers, data):
     sh = gc.open_by_key(TARGET_SPREADSHEET_ID)
