@@ -1,0 +1,27 @@
+name: Daily News Extract
+
+on:
+  schedule:
+    - cron: '3 6 * * *'  # ✅ JST 15:03（UTC 06:03）
+  workflow_dispatch:      # 手動実行も有効化
+
+jobs:
+  news:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install gspread oauth2client
+
+      - name: Run main.py
+        env:
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+        run: python main.py
