@@ -73,14 +73,15 @@ def overwrite_sheet(gc, sheet_name, headers, data):
     except:
         pass
 
-    ws = sh.add_worksheet(title=sheet_name, rows="100", cols=str(len(headers)))
+    ws = sh.add_worksheet(title=sheet_name, rows="1", cols=str(len(headers)))
     ws.append_row(headers)
 
     if data:
+        max_rows = len(data)
+        ws.resize(rows=max_rows + 10)  # エラー防止のため +10 行の余裕を持って拡張
+
         ws.append_rows(data, value_input_option='USER_ENTERED')
 
-        max_rows = len(data)
-        ws.resize(rows=max_rows + 1)  # +1 for header
         cell_range = ws.range(f"L2:L{max_rows+1}")
         for idx, cell in enumerate(cell_range, 1):
             cell.value = idx
@@ -94,7 +95,7 @@ def main():
     credentials = json.loads(os.environ["GCP_SERVICE_ACCOUNT_KEY"])
     gc = gspread.service_account_from_dict(credentials)
     headers, data = extract_articles(gc)
-    sheet_name = datetime.now().strftime("%y%m%d")
+    sheet_name = datetime.now().strftime("%y%m%d")  # 例: 250611
     overwrite_sheet(gc, sheet_name, headers, data)
 
 if __name__ == "__main__":
