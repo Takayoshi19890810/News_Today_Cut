@@ -7,7 +7,7 @@ import gspread
 # スプレッドシート設定
 SOURCE_SPREADSHEET_ID = "1RglATeTbLU1SqlfXnNToJqhXLdNoHCdePldioKDQgU8"
 TARGET_SPREADSHEET_ID = "1IYUuwzvlR2OJC8r3FkaUvA44tc0XGqT2kxbAXiMgt2s"
-SOURCE_SHEETS = ["Google", "Yahoo", "MSN"]
+SOURCE_SHEETS = ["MSN", "Google", "Yahoo"]  # ✅ 出力順をMSN → Google → Yahooに変更
 NEWS_SOURCES = {"Google": "Google", "Yahoo": "Yahoo", "MSN": "MSN"}
 DATE_COLUMN_INDEX = 2  # C列「投稿日」列のインデックス（0始まり）
 
@@ -24,7 +24,7 @@ def extract_articles(gc):
             values = ws.get_all_values()
             if not values:
                 continue
-            rows = values[1:]
+            rows = values[1:]  # ヘッダーを除く
 
             for row in rows:
                 try:
