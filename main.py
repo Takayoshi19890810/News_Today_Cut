@@ -53,7 +53,7 @@ def extract_articles(gc):
                             "", "", "",               # F〜H: コメント数, ポジ/ネガ, カテゴリー
                             f'=IFERROR(VLOOKUP(C{len(extracted)+2},ダブり!C:L,10,FALSE),"")',  # I:ダブりチェック
                             "",                      # J:タイトル抜粋
-                            ""                       # K:番号（あとで入力）
+                            ""                       # K:番号（後で update() で入れる）
                         ])
                 except Exception as e:
                     print(f"⚠️ {sheet} スキップ: {row[DATE_COLUMN_INDEX]} → {e}")
@@ -77,25 +77,18 @@ def overwrite_sheet(gc, sheet_name, headers, data):
     except:
         pass
 
-    ws = sh.add_worksheet(title=sheet_name, rows="1", cols=str(len(headers)))
+    total_rows = len(data) + 1  # ヘッダー行を含めた必要行数
+    ws = sh.add_worksheet(title=sheet_name, rows=str(total_rows), cols=str(len(headers)))
     ws.append_row(headers)
 
     if data:
-        max_rows = len(data)
         ws.append_rows(data, value_input_option='USER_ENTERED')
 
-        # 現在の行数を取得（ヘッダー + データ行）
-        current_rows = len(ws.get_all_values())
-        start_row = 2
-        end_row = current_rows if current_rows > 1 else max_rows + 1
+        # ✅ L列（11列目）に連番を安全に一括で書き込み
+        numbering = [[str(i + 1)] for i in range(len(data))]  # [['1'], ['2'], ...]
+        ws.update(f"L2:L{len(data)+1}", numbering)
 
-        # 安全な範囲に限定して番号を付与
-        cell_range = ws.range(f"L{start_row}:L{end_row}")
-        for idx, cell in enumerate(cell_range, 1):
-            cell.value = idx
-        ws.update_cells(cell_range)
-
-        print(f"✅ {max_rows} 件をシート「{sheet_name}」に出力しました。")
+        print(f"✅ {len(data)} 件をシート「{sheet_name}」に出力しました。")
     else:
         print("⚠️ 対象データがありません。")
 
@@ -103,7 +96,7 @@ def main():
     credentials = json.loads(os.environ["GCP_SERVICE_ACCOUNT_KEY"])
     gc = gspread.service_account_from_dict(credentials)
     headers, data = extract_articles(gc)
-    sheet_name = datetime.now().strftime("%y%m%d")
+    sheet_name = datetime.now().strftime("%y%m%d")  # 例: 250611
     overwrite_sheet(gc, sheet_name, headers, data)
 
 if __name__ == "__main__":
