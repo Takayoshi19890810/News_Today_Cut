@@ -77,19 +77,18 @@ def overwrite_sheet(gc, sheet_name, headers, data):
     except:
         pass
 
-    total_rows = len(data) + 1  # ヘッダー含む
-    ws = sh.add_worksheet(title=sheet_name, rows=str(total_rows), cols=str(len(headers)))
+    # ✅ 最初から十分な行数を確保（Grid制限対策）
+    max_expected_rows = max(len(data) + 1, 1000)
+    ws = sh.add_worksheet(title=sheet_name, rows=str(max_expected_rows), cols=str(len(headers)))
     ws.append_row(headers)
 
     if data:
         ws.append_rows(data, value_input_option='USER_ENTERED')
 
-        # ✅ resizeで安全な範囲を確保（update前に必須）
-        ws.resize(rows=len(data) + 10)
-
-        # ✅ L列に番号を新形式で一括挿入
+        # ✅ L列に連番を一括で挿入（新形式）
         numbering = [[str(i + 1)] for i in range(len(data))]
-        ws.update(range_name=f"L2:L{len(data)+1}", values=numbering)
+        last_row = len(data) + 1  # L2 ～ L{last_row}
+        ws.update(range_name=f"L2:L{last_row}", values=numbering)
 
         print(f"✅ {len(data)} 件をシート「{sheet_name}」に出力しました。")
     else:
@@ -99,7 +98,7 @@ def main():
     credentials = json.loads(os.environ["GCP_SERVICE_ACCOUNT_KEY"])
     gc = gspread.service_account_from_dict(credentials)
     headers, data = extract_articles(gc)
-    sheet_name = datetime.now().strftime("%y%m%d")
+    sheet_name = datetime.now().strftime("%y%m%d")  # 例: "250611"
     overwrite_sheet(gc, sheet_name, headers, data)
 
 if __name__ == "__main__":
