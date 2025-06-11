@@ -30,12 +30,16 @@ def extract_articles(gc):
                 try:
                     date_str = row[DATE_COLUMN_INDEX].strip()
 
-                    if re.match(r"^\d{1,2}/\d{1,2} \d{1,2}:\d{2}$", date_str):
+                    # 各種日付形式の補正
+                    if re.match(r"^\d{1,2}/\d{1,2} \d{1,2}:\d{2}$", date_str):  # MM/DD HH:MM
                         date_str = f"{now.year}/{date_str}"
-                    elif re.match(r"^\d{1,2}/\d{1,2}$", date_str):
+                    elif re.match(r"^\d{1,2}/\d{1,2}$", date_str):  # MM/DD
                         date_str = f"{now.year}/{date_str} 00:00"
-                    elif re.match(r"^\d{4}/\d{1,2}/\d{1,2}$", date_str):
+                    elif re.match(r"^\d{4}/\d{1,2}/\d{1,2}$", date_str):  # YYYY/MM/DD
                         date_str = f"{date_str} 00:00"
+                    elif re.match(r"^\d{1,2}/\d{1,2}/\d{4}$", date_str):  # MM/DD/YYYY
+                        date_str = f"{date_str} 00:00"
+                        date_str = datetime.strptime(date_str, "%m/%d/%Y %H:%M").strftime("%Y/%m/%d %H:%M")
 
                     dt = datetime.strptime(date_str, "%Y/%m/%d %H:%M")
 
@@ -46,10 +50,10 @@ def extract_articles(gc):
                             row[1],                  # C:URL
                             date_str,                # D:投稿日時
                             row[3] if len(row) > 3 else "",  # E:ソース
-                            "", "", "",               # F:コメント数, G:ポジ/ネガ, H:カテゴリー
+                            "", "", "",               # F〜H: コメント数, ポジ/ネガ, カテゴリー
                             f'=IFERROR(VLOOKUP(C{len(extracted)+2},ダブり!C:L,10,FALSE),"")',  # I:ダブりチェック
                             "",                      # J:タイトル抜粋
-                            ""                       # K:番号（後で入力）
+                            ""                       # K:番号（あとで入力）
                         ])
                 except Exception as e:
                     print(f"⚠️ {sheet} スキップ: {row[DATE_COLUMN_INDEX]} → {e}")
@@ -78,11 +82,14 @@ def overwrite_sheet(gc, sheet_name, headers, data):
 
     if data:
         max_rows = len(data)
-        ws.resize(rows=max_rows + 10)  # エラー防止のため +10 行の余裕を持って拡張
 
+        # 行数を事前に拡張（append_rows前に反映されない可能性があるため、後で実行）
         ws.append_rows(data, value_input_option='USER_ENTERED')
+        ws.resize(rows=max_rows + 10)
 
-        cell_range = ws.range(f"L2:L{max_rows+1}")
+        # L列：番号付与（最大行数に安全配慮して1000行を上限）
+        safe_limit = min(max_rows, 1000)
+        cell_range = ws.range(f"L2:L{safe_limit+1}")
         for idx, cell in enumerate(cell_range, 1):
             cell.value = idx
         ws.update_cells(cell_range)
