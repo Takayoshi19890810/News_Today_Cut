@@ -7,9 +7,9 @@ import gspread
 # スプレッドシート設定
 SOURCE_SPREADSHEET_ID = "1RglATeTbLU1SqlfXnNToJqhXLdNoHCdePldioKDQgU8"
 TARGET_SPREADSHEET_ID = "1IYUuwzvlR2OJC8r3FkaUvA44tc0XGqT2kxbAXiMgt2s"
-SOURCE_SHEETS = ["MSN", "Google", "Yahoo"]  # ✅ 出力順をMSN → Google → Yahooに変更
+SOURCE_SHEETS = ["MSN", "Google", "Yahoo"]
 NEWS_SOURCES = {"Google": "Google", "Yahoo": "Yahoo", "MSN": "MSN"}
-DATE_COLUMN_INDEX = 2  # C列「投稿日」列のインデックス（0始まり）
+DATE_COLUMN_INDEX = 2  # C列「投稿日」
 
 def extract_articles(gc):
     sh = gc.open_by_key(SOURCE_SPREADSHEET_ID)
@@ -24,43 +24,43 @@ def extract_articles(gc):
             values = ws.get_all_values()
             if not values:
                 continue
-            rows = values[1:]  # ヘッダーを除く
+            rows = values[1:]
 
             for row in rows:
                 try:
                     date_str = row[DATE_COLUMN_INDEX].strip()
 
-                    # Yahoo形式: 年無し + 時刻 → 年補完
                     if re.match(r"^\d{1,2}/\d{1,2} \d{1,2}:\d{2}$", date_str):
                         date_str = f"{now.year}/{date_str}"
-
-                    # MSN形式1: 月/日（6/10）→ 年と00:00時刻補完
                     elif re.match(r"^\d{1,2}/\d{1,2}$", date_str):
                         date_str = f"{now.year}/{date_str} 00:00"
-
-                    # MSN形式2: 年/月/日（2025/6/10）→ 時刻補完
                     elif re.match(r"^\d{4}/\d{1,2}/\d{1,2}$", date_str):
                         date_str = f"{date_str} 00:00"
 
                     dt = datetime.strptime(date_str, "%Y/%m/%d %H:%M")
 
                     if yesterday_15 <= dt < today_15:
-                        # A:ニュース元 / B:タイトル / C:URL / D:投稿日 / E:引用元
                         extracted.append([
-                            NEWS_SOURCES[sheet],  # A列: ニュース元
-                            row[0],               # B列: タイトル
-                            row[1],               # C列: URL
-                            date_str,             # D列: 投稿日
-                            row[3] if len(row) > 3 else ""  # E列: 引用元
+                            NEWS_SOURCES[sheet],     # A:ニュースサイト
+                            row[0],                  # B:タイトル
+                            row[1],                  # C:URL
+                            date_str,                # D:投稿日時
+                            row[3] if len(row) > 3 else "",  # E:ソース
+                            "", "", "",               # F:コメント数, G:ポジ/ネガ, H:カテゴリー
+                            f'=IFERROR(VLOOKUP(C{len(extracted)+2},ダブり!C:L,10,FALSE),"")',  # I:ダブりチェック
+                            "",                      # J:タイトル抜粋
+                            ""                       # K:番号（後で入力）
                         ])
                 except Exception as e:
                     print(f"⚠️ {sheet} スキップ: {row[DATE_COLUMN_INDEX]} → {e}")
-                    continue
         except Exception as e:
             print(f"❌ {sheet} 読み込みエラー: {e}")
-            continue
 
-    headers = ["ニュース元", "タイトル", "URL", "投稿日", "引用元"]
+    headers = [
+        "ニュースサイト", "タイトル", "URL", "投稿日時", "ソース",
+        "コメント数", "ポジ/ネガ", "カテゴリー", "ダブりチェック",
+        "タイトル抜粋", "番号"
+    ]
     return headers, extracted
 
 def overwrite_sheet(gc, sheet_name, headers, data):
@@ -78,6 +78,13 @@ def overwrite_sheet(gc, sheet_name, headers, data):
 
     if data:
         ws.append_rows(data, value_input_option='USER_ENTERED')
+
+        # L列 番号付与（2行目から）
+        cell_range = ws.range(f"L2:L{len(data)+1}")
+        for idx, cell in enumerate(cell_range, 1):
+            cell.value = idx
+        ws.update_cells(cell_range)
+
         print(f"✅ {len(data)} 件をシート「{sheet_name}」に出力しました。")
     else:
         print("⚠️ 対象データがありません。")
@@ -86,7 +93,7 @@ def main():
     credentials = json.loads(os.environ["GCP_SERVICE_ACCOUNT_KEY"])
     gc = gspread.service_account_from_dict(credentials)
     headers, data = extract_articles(gc)
-    sheet_name = datetime.now().strftime("%y%m%d")  # 例: 250610
+    sheet_name = datetime.now().strftime("%y%m%d")
     overwrite_sheet(gc, sheet_name, headers, data)
 
 if __name__ == "__main__":
