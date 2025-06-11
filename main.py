@@ -79,13 +79,14 @@ def overwrite_sheet(gc, sheet_name, headers, data):
     if data:
         ws.append_rows(data, value_input_option='USER_ENTERED')
 
-        # L列 番号付与（2行目から）
-        cell_range = ws.range(f"L2:L{len(data)+1}")
+        max_rows = len(data)
+        ws.resize(rows=max_rows + 1)  # +1 for header
+        cell_range = ws.range(f"L2:L{max_rows+1}")
         for idx, cell in enumerate(cell_range, 1):
             cell.value = idx
         ws.update_cells(cell_range)
 
-        print(f"✅ {len(data)} 件をシート「{sheet_name}」に出力しました。")
+        print(f"✅ {max_rows} 件をシート「{sheet_name}」に出力しました。")
     else:
         print("⚠️ 対象データがありません。")
 
