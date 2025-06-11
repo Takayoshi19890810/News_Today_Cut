@@ -30,7 +30,7 @@ def extract_articles(gc):
                 try:
                     date_str = row[DATE_COLUMN_INDEX].strip()
 
-                    # 各種日付形式の補正
+                    # 日付形式の補正
                     if re.match(r"^\d{1,2}/\d{1,2} \d{1,2}:\d{2}$", date_str):  # MM/DD HH:MM
                         date_str = f"{now.year}/{date_str}"
                     elif re.match(r"^\d{1,2}/\d{1,2}$", date_str):  # MM/DD
@@ -82,14 +82,15 @@ def overwrite_sheet(gc, sheet_name, headers, data):
 
     if data:
         max_rows = len(data)
-
-        # 行数を事前に拡張（append_rows前に反映されない可能性があるため、後で実行）
         ws.append_rows(data, value_input_option='USER_ENTERED')
-        ws.resize(rows=max_rows + 10)
 
-        # L列：番号付与（最大行数に安全配慮して1000行を上限）
-        safe_limit = min(max_rows, 1000)
-        cell_range = ws.range(f"L2:L{safe_limit+1}")
+        # 現在の行数を取得（ヘッダー + データ行）
+        current_rows = len(ws.get_all_values())
+        start_row = 2
+        end_row = current_rows if current_rows > 1 else max_rows + 1
+
+        # 安全な範囲に限定して番号を付与
+        cell_range = ws.range(f"L{start_row}:L{end_row}")
         for idx, cell in enumerate(cell_range, 1):
             cell.value = idx
         ws.update_cells(cell_range)
@@ -102,7 +103,7 @@ def main():
     credentials = json.loads(os.environ["GCP_SERVICE_ACCOUNT_KEY"])
     gc = gspread.service_account_from_dict(credentials)
     headers, data = extract_articles(gc)
-    sheet_name = datetime.now().strftime("%y%m%d")  # 例: 250611
+    sheet_name = datetime.now().strftime("%y%m%d")
     overwrite_sheet(gc, sheet_name, headers, data)
 
 if __name__ == "__main__":
