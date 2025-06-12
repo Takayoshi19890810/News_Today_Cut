@@ -3,8 +3,16 @@ import json
 import gspread
 from datetime import datetime, timedelta
 from google.oauth2.service_account import Credentials
+from transformers import pipeline
 
-# ✅ 認証
+# ✅ Hugging Face 感情分析モデル（日本語BERT）
+sentiment_analyzer = pipeline(
+    "sentiment-analysis",
+    model="daigo/bert-base-japanese-sentiment",
+    tokenizer="daigo/bert-base-japanese-sentiment"
+)
+
+# ✅ Google認証
 service_account_info = json.loads(os.environ["GCP_SERVICE_ACCOUNT_KEY"])
 creds = Credentials.from_service_account_info(
     service_account_info,
@@ -13,33 +21,32 @@ creds = Credentials.from_service_account_info(
 gc = gspread.authorize(creds)
 
 # ✅ スプレッドシート設定
-SOURCE_SPREADSHEET_ID = "1RglATeTbLU1SqlfXnNToJqhXLdNoHCdePldioKDQgU8"  # データ元
-DEST_SPREADSHEET_ID = "1IYUuwzvlR2OJC8r3FkaUvA44tc0XGqT2kxbAXiMgt2s"    # 出力先
+SOURCE_SPREADSHEET_ID = "1RglATeTbLU1SqlfXnNToJqhXLdNoHCdePldioKDQgU8"
+DEST_SPREADSHEET_ID = "1IYUuwzvlR2OJC8r3FkaUvA44tc0XGqT2kxbAXiMgt2s"
 
-# ✅ 日付範囲：前日15時〜当日15時
+# ✅ 日付範囲
 today = datetime.now()
 today_str = today.strftime("%y%m%d")
 yesterday_15 = datetime(today.year, today.month, today.day, 15) - timedelta(days=1)
 today_15 = datetime(today.year, today.month, today.day, 15)
 
-# ✅ スプレッドシート接続
+# ✅ 接続
 source_book = gc.open_by_key(SOURCE_SPREADSHEET_ID)
 dest_book = gc.open_by_key(DEST_SPREADSHEET_ID)
 
-# ✅ 出力先シート作成（Baseコピー→日付名に）
+# ✅ 出力先シート（Base → 今日の日付）
 try:
     dest_book.del_worksheet(dest_book.worksheet(today_str))
 except:
     pass
-
 base_ws = dest_book.worksheet("Base")
 target_ws = dest_book.duplicate_sheet(base_ws.id, new_sheet_name=today_str)
 
-# ✅ ソース順と結果格納リスト
+# ✅ データ処理対象シート
 SOURCE_ORDER = ["MSN", "Google", "Yahoo"]
 all_rows = []
 
-# ✅ 日時パース（年なし形式にも対応）
+# ✅ 日時パース関数
 def parse_datetime(s):
     try:
         return datetime.strptime(s.strip(), "%Y/%m/%d %H:%M")
@@ -51,28 +58,30 @@ def parse_datetime(s):
     except:
         return None
 
-# ✅ 感情分類（簡易キーワード方式）
-def classify_sentiment(title):
-    positives = ["新登場", "好評", "成功", "快挙", "注目", "期待", "進化", "魅力", "強化"]
-    negatives = ["事故", "批判", "炎上", "問題", "不安", "失敗", "懸念", "課題"]
-    title = title.lower()
-    if any(word in title for word in negatives):
-        return "ネガティブ"
-    elif any(word in title for word in positives):
-        return "ポジティブ"
-    else:
-        return "ニュートラル"
+# ✅ 感情分析（G列）
+def classify_sentiment_hf(text):
+    try:
+        result = sentiment_analyzer(text[:256])[0]
+        label = result["label"]
+        if "POSITIVE" in label:
+            return "ポジティブ"
+        elif "NEGATIVE" in label:
+            return "ネガティブ"
+        else:
+            return "ニュートラル"
+    except:
+        return "不明"
 
-# ✅ カテゴリ分類（キーワードベース）
+# ✅ カテゴリ分類（H列）※ルールベース
 def classify_category(title):
     categories = {
-        "エンタメ": ["映画", "ドラマ", "俳優", "女優", "アイドル", "音楽"],
-        "スポーツ": ["試合", "選手", "優勝", "リーグ", "五輪", "W杯", "ゴルフ", "野球"],
-        "会社": ["企業", "社長", "業績", "決算", "上場", "買収"],
-        "技術": ["AI", "半導体", "開発", "テクノロジー", "特許", "エンジニア"],
-        "社会": ["政治", "教育", "事件", "災害", "法律", "政府"],
-        "車": ["トヨタ", "日産", "車", "EV", "自動運転", "試乗", "SUV"],
-        "投資": ["株", "投資", "為替", "金利", "資産", "経済", "円安"]
+        "エンタメ": ["映画", "ドラマ", "俳優", "女優", "アニメ", "アイドル", "芸能", "歌手"],
+        "スポーツ": ["野球", "サッカー", "ゴルフ", "テニス", "選手", "試合", "W杯", "五輪"],
+        "会社": ["企業", "会社", "決算", "社長", "業績", "買収", "上場", "IR", "株主"],
+        "技術": ["AI", "半導体", "IoT", "量子", "テクノロジー", "開発", "エンジニア", "ロボット"],
+        "社会": ["政治", "法律", "事件", "災害", "裁判", "教育", "警察", "人口"],
+        "車": ["トヨタ", "ホンダ", "日産", "車", "EV", "SUV", "走行", "自動運転", "試乗"],
+        "投資": ["株", "日経平均", "為替", "利上げ", "経済", "インフレ", "資産", "金利", "投資"]
     }
     title = title.lower()
     for category, keywords in categories.items():
@@ -80,7 +89,7 @@ def classify_category(title):
             return category
     return "社会"
 
-# ✅ 各ニュースソースを処理
+# ✅ 処理ループ
 for source in SOURCE_ORDER:
     try:
         ws = source_book.worksheet(source)
@@ -101,18 +110,18 @@ for source in SOURCE_ORDER:
         dt = parse_datetime(row[2])
         if dt and yesterday_15 <= dt < today_15:
             title = row[0]
-            sentiment = classify_sentiment(title)
+            sentiment = classify_sentiment_hf(title)
             category = classify_category(title)
-            all_rows.append([source] + row[:4] + ["", sentiment, category])  # F列空欄
+            all_rows.append([source] + row[:4] + ["", sentiment, category])  # F列は空欄
             source_count += 1
         else:
             skipped += 1
 
     print(f"✅ {source}: 貼付 {source_count} 件 / スキップ {skipped} 件")
 
-# ✅ 一括出力（A2〜）
+# ✅ 一括貼り付け
 if all_rows:
     target_ws.update(values=all_rows, range_name="A2")
     print(f"✅ 合計 {len(all_rows)} 件を貼り付けました。")
 else:
-    print("⚠️ 該当するニュースが見つかりませんでした。")
+    print("⚠️ 該当期間のニュースが見つかりませんでした。")
