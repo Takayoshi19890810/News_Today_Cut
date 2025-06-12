@@ -5,11 +5,11 @@ from datetime import datetime, timedelta
 from google.oauth2.service_account import Credentials
 from transformers import pipeline
 
-# ✅ Hugging Face 感情分析モデル（日本語BERT）
+# ✅ Hugging Face 感情分類モデル（修正版）
 sentiment_analyzer = pipeline(
     "sentiment-analysis",
-    model="daigo/bert-base-japanese-sentiment",
-    tokenizer="daigo/bert-base-japanese-sentiment"
+    model="daigo/bert-base-japanese-sentiment-classification",
+    tokenizer="daigo/bert-base-japanese-sentiment-classification"
 )
 
 # ✅ Google認証
@@ -21,20 +21,20 @@ creds = Credentials.from_service_account_info(
 gc = gspread.authorize(creds)
 
 # ✅ スプレッドシート設定
-SOURCE_SPREADSHEET_ID = "1RglATeTbLU1SqlfXnNToJqhXLdNoHCdePldioKDQgU8"
-DEST_SPREADSHEET_ID = "1IYUuwzvlR2OJC8r3FkaUvA44tc0XGqT2kxbAXiMgt2s"
+SOURCE_SPREADSHEET_ID = "1RglATeTbLU1SqlfXnNToJqhXLdNoHCdePldioKDQgU8"  # データ元
+DEST_SPREADSHEET_ID = "1IYUuwzvlR2OJC8r3FkaUvA44tc0XGqT2kxbAXiMgt2s"    # 出力先
 
-# ✅ 日付範囲
+# ✅ 日付範囲（前日15:00〜当日15:00）
 today = datetime.now()
 today_str = today.strftime("%y%m%d")
 yesterday_15 = datetime(today.year, today.month, today.day, 15) - timedelta(days=1)
 today_15 = datetime(today.year, today.month, today.day, 15)
 
-# ✅ 接続
+# ✅ スプレッドシート接続
 source_book = gc.open_by_key(SOURCE_SPREADSHEET_ID)
 dest_book = gc.open_by_key(DEST_SPREADSHEET_ID)
 
-# ✅ 出力先シート（Base → 今日の日付）
+# ✅ 出力先シート準備（Baseをコピーして日付名に）
 try:
     dest_book.del_worksheet(dest_book.worksheet(today_str))
 except:
@@ -42,11 +42,11 @@ except:
 base_ws = dest_book.worksheet("Base")
 target_ws = dest_book.duplicate_sheet(base_ws.id, new_sheet_name=today_str)
 
-# ✅ データ処理対象シート
+# ✅ ソース順
 SOURCE_ORDER = ["MSN", "Google", "Yahoo"]
 all_rows = []
 
-# ✅ 日時パース関数
+# ✅ 日時パース（C列）
 def parse_datetime(s):
     try:
         return datetime.strptime(s.strip(), "%Y/%m/%d %H:%M")
@@ -58,21 +58,21 @@ def parse_datetime(s):
     except:
         return None
 
-# ✅ 感情分析（G列）
-def classify_sentiment_hf(text):
+# ✅ 感情分類（G列）
+def classify_sentiment(text):
     try:
         result = sentiment_analyzer(text[:256])[0]
-        label = result["label"]
-        if "POSITIVE" in label:
+        label = result["label"].lower()
+        if "positive" in label:
             return "ポジティブ"
-        elif "NEGATIVE" in label:
+        elif "negative" in label:
             return "ネガティブ"
         else:
             return "ニュートラル"
     except:
         return "不明"
 
-# ✅ カテゴリ分類（H列）※ルールベース
+# ✅ カテゴリ分類（H列）ルールベース
 def classify_category(title):
     categories = {
         "エンタメ": ["映画", "ドラマ", "俳優", "女優", "アニメ", "アイドル", "芸能", "歌手"],
@@ -89,7 +89,7 @@ def classify_category(title):
             return category
     return "社会"
 
-# ✅ 処理ループ
+# ✅ ニュース処理ループ
 for source in SOURCE_ORDER:
     try:
         ws = source_book.worksheet(source)
@@ -110,18 +110,18 @@ for source in SOURCE_ORDER:
         dt = parse_datetime(row[2])
         if dt and yesterday_15 <= dt < today_15:
             title = row[0]
-            sentiment = classify_sentiment_hf(title)
+            sentiment = classify_sentiment(title)
             category = classify_category(title)
-            all_rows.append([source] + row[:4] + ["", sentiment, category])  # F列は空欄
+            all_rows.append([source] + row[:4] + ["", sentiment, category])
             source_count += 1
         else:
             skipped += 1
 
     print(f"✅ {source}: 貼付 {source_count} 件 / スキップ {skipped} 件")
 
-# ✅ 一括貼り付け
+# ✅ スプレッドシート貼り付け（A2から）
 if all_rows:
     target_ws.update(values=all_rows, range_name="A2")
     print(f"✅ 合計 {len(all_rows)} 件を貼り付けました。")
 else:
-    print("⚠️ 該当期間のニュースが見つかりませんでした。")
+    print("⚠️ 該当するニュースが見つかりませんでした。")
