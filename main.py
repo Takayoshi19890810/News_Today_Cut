@@ -5,11 +5,11 @@ from datetime import datetime, timedelta
 from google.oauth2.service_account import Credentials
 from transformers import pipeline
 
-# ✅ Hugging Face 感情分類モデル（修正版）
+# ✅ Hugging Face感情分析パイプライン（rinnaモデル）
 sentiment_analyzer = pipeline(
     "sentiment-analysis",
-    model="daigo/bert-base-japanese-sentiment-classification",
-    tokenizer="daigo/bert-base-japanese-sentiment-classification"
+    model="rinna/japanese-roberta-base-sentiment",
+    tokenizer="rinna/japanese-roberta-base-sentiment"
 )
 
 # ✅ Google認証
@@ -21,10 +21,10 @@ creds = Credentials.from_service_account_info(
 gc = gspread.authorize(creds)
 
 # ✅ スプレッドシート設定
-SOURCE_SPREADSHEET_ID = "1RglATeTbLU1SqlfXnNToJqhXLdNoHCdePldioKDQgU8"  # データ元
-DEST_SPREADSHEET_ID = "1IYUuwzvlR2OJC8r3FkaUvA44tc0XGqT2kxbAXiMgt2s"    # 出力先
+SOURCE_SPREADSHEET_ID = "1RglATeTbLU1SqlfXnNToJqhXLdNoHCdePldioKDQgU8"
+DEST_SPREADSHEET_ID = "1IYUuwzvlR2OJC8r3FkaUvA44tc0XGqT2kxbAXiMgt2s"
 
-# ✅ 日付範囲（前日15:00〜当日15:00）
+# ✅ 日付範囲設定（前日15時〜当日15時）
 today = datetime.now()
 today_str = today.strftime("%y%m%d")
 yesterday_15 = datetime(today.year, today.month, today.day, 15) - timedelta(days=1)
@@ -34,7 +34,7 @@ today_15 = datetime(today.year, today.month, today.day, 15)
 source_book = gc.open_by_key(SOURCE_SPREADSHEET_ID)
 dest_book = gc.open_by_key(DEST_SPREADSHEET_ID)
 
-# ✅ 出力先シート準備（Baseをコピーして日付名に）
+# ✅ 出力先シート作成
 try:
     dest_book.del_worksheet(dest_book.worksheet(today_str))
 except:
@@ -42,7 +42,7 @@ except:
 base_ws = dest_book.worksheet("Base")
 target_ws = dest_book.duplicate_sheet(base_ws.id, new_sheet_name=today_str)
 
-# ✅ ソース順
+# ✅ 対象ニュースソース
 SOURCE_ORDER = ["MSN", "Google", "Yahoo"]
 all_rows = []
 
@@ -89,7 +89,7 @@ def classify_category(title):
             return category
     return "社会"
 
-# ✅ ニュース処理ループ
+# ✅ 各ニュースソースを処理
 for source in SOURCE_ORDER:
     try:
         ws = source_book.worksheet(source)
@@ -119,9 +119,9 @@ for source in SOURCE_ORDER:
 
     print(f"✅ {source}: 貼付 {source_count} 件 / スキップ {skipped} 件")
 
-# ✅ スプレッドシート貼り付け（A2から）
+# ✅ 結果貼付け（A2〜）
 if all_rows:
     target_ws.update(values=all_rows, range_name="A2")
     print(f"✅ 合計 {len(all_rows)} 件を貼り付けました。")
 else:
-    print("⚠️ 該当するニュースが見つかりませんでした。")
+    print("⚠️ 該当期間のニュースが見つかりませんでした。")
