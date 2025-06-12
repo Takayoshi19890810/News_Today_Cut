@@ -3,14 +3,6 @@ import json
 import gspread
 from datetime import datetime, timedelta
 from google.oauth2.service_account import Credentials
-from transformers import pipeline
-
-# ✅ Hugging Face感情分析パイプライン（rinnaモデル）
-sentiment_analyzer = pipeline(
-    "sentiment-analysis",
-    model="rinna/japanese-roberta-base-sentiment",
-    tokenizer="rinna/japanese-roberta-base-sentiment"
-)
 
 # ✅ Google認証
 service_account_info = json.loads(os.environ["GCP_SERVICE_ACCOUNT_KEY"])
@@ -24,7 +16,7 @@ gc = gspread.authorize(creds)
 SOURCE_SPREADSHEET_ID = "1RglATeTbLU1SqlfXnNToJqhXLdNoHCdePldioKDQgU8"
 DEST_SPREADSHEET_ID = "1IYUuwzvlR2OJC8r3FkaUvA44tc0XGqT2kxbAXiMgt2s"
 
-# ✅ 日付範囲設定（前日15時〜当日15時）
+# ✅ 日付範囲（前日15:00〜当日15:00）
 today = datetime.now()
 today_str = today.strftime("%y%m%d")
 yesterday_15 = datetime(today.year, today.month, today.day, 15) - timedelta(days=1)
@@ -34,7 +26,7 @@ today_15 = datetime(today.year, today.month, today.day, 15)
 source_book = gc.open_by_key(SOURCE_SPREADSHEET_ID)
 dest_book = gc.open_by_key(DEST_SPREADSHEET_ID)
 
-# ✅ 出力先シート作成
+# ✅ 出力先シート準備（Baseをコピーして今日の日付に）
 try:
     dest_book.del_worksheet(dest_book.worksheet(today_str))
 except:
@@ -42,7 +34,7 @@ except:
 base_ws = dest_book.worksheet("Base")
 target_ws = dest_book.duplicate_sheet(base_ws.id, new_sheet_name=today_str)
 
-# ✅ 対象ニュースソース
+# ✅ 処理対象のソース順
 SOURCE_ORDER = ["MSN", "Google", "Yahoo"]
 all_rows = []
 
@@ -58,21 +50,19 @@ def parse_datetime(s):
     except:
         return None
 
-# ✅ 感情分類（G列）
-def classify_sentiment(text):
-    try:
-        result = sentiment_analyzer(text[:256])[0]
-        label = result["label"].lower()
-        if "positive" in label:
-            return "ポジティブ"
-        elif "negative" in label:
-            return "ネガティブ"
-        else:
-            return "ニュートラル"
-    except:
-        return "不明"
+# ✅ 感情分類（G列：ルールベース）
+def classify_sentiment(title):
+    positives = ["新登場", "好評", "快挙", "注目", "期待", "成功", "改善", "上昇", "記録", "好転", "前向き"]
+    negatives = ["事故", "批判", "炎上", "懸念", "問題", "失敗", "下落", "苦戦", "赤字", "不正", "後退", "不安"]
+    title = title.lower()
+    if any(word in title for word in negatives):
+        return "ネガティブ"
+    elif any(word in title for word in positives):
+        return "ポジティブ"
+    else:
+        return "ニュートラル"
 
-# ✅ カテゴリ分類（H列）ルールベース
+# ✅ カテゴリ分類（H列：ルールベース）
 def classify_category(title):
     categories = {
         "エンタメ": ["映画", "ドラマ", "俳優", "女優", "アニメ", "アイドル", "芸能", "歌手"],
@@ -89,7 +79,7 @@ def classify_category(title):
             return category
     return "社会"
 
-# ✅ 各ニュースソースを処理
+# ✅ 各ニュースソース処理
 for source in SOURCE_ORDER:
     try:
         ws = source_book.worksheet(source)
@@ -119,9 +109,9 @@ for source in SOURCE_ORDER:
 
     print(f"✅ {source}: 貼付 {source_count} 件 / スキップ {skipped} 件")
 
-# ✅ 結果貼付け（A2〜）
+# ✅ 一括出力（A2〜）
 if all_rows:
     target_ws.update(values=all_rows, range_name="A2")
     print(f"✅ 合計 {len(all_rows)} 件を貼り付けました。")
 else:
-    print("⚠️ 該当期間のニュースが見つかりませんでした。")
+    print("⚠️ 該当するニュースが見つかりませんでした。")
